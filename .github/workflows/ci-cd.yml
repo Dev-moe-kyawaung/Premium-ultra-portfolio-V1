@@ -1,0 +1,400 @@
+name: Flutter Portfolio CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+# Cancel previous runs if new commit comes
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.19.0'
+  APP_VERSION: '1.0.0'
+
+jobs:
+  # =============================================================================
+  # JOB 1: Validate & Lint
+  # =============================================================================
+  validate:
+    name: 📋 Validate & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Check formatting
+        run: flutter format --set-exit-if-changed .
+
+      - name: Analyze code
+        run: flutter analyze
+
+      - name: Run linting
+        run: flutter pub run lint
+
+  # =============================================================================
+  # JOB 2: Run Tests
+  # =============================================================================
+  test:
+    name: 🧪 Run Tests
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run unit tests
+        run: flutter test
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: test/coverage/
+          retention-days: 5
+
+  # =============================================================================
+  # JOB 3: Build Web
+  # =============================================================================
+  build-web:
+    name: 🏗️ Build Web
+    runs-on: ubuntu-latest
+    needs: [validate, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build for web (release)
+        run: flutter build web --release --base-href="/"
+
+      - name: Upload web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: build/web
+          retention-days: 7
+
+      - name: Measure build size
+        run: |
+          echo "Build size:"
+          du -sh build/web/
+          echo "Main JS file:"
+          ls -lh build/web/*.js
+
+  # =============================================================================
+  # JOB 4: Build Android
+  # =============================================================================
+  build-android:
+    name: 📱 Build Android
+    runs-on: ubuntu-latest
+    needs: [validate, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build APK (release)
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 7
+
+      - name: Build App Bundle
+        run: flutter build appbundle --release
+
+      - name: Upload App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-bundle
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 7
+
+  # =============================================================================
+  # JOB 5: Security Scan
+  # =============================================================================
+  security:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run flutter_tools security check
+        run: flutter pub run flutter_tools:security
+
+      - name: Check for sensitive data
+        run: |
+          echo "Checking for sensitive data..."
+          if grep -r "password|secret|api_key" --include="*.dart" .; then
+            echo "⚠️ Found potentially sensitive data!"
+            exit 1
+          fi
+          echo "✅ No sensitive data found"
+
+  # =============================================================================
+  # JOB 6: Deploy to GitHub Pages (Production)
+  # =============================================================================
+  deploy:
+    name: 🚀 Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: [build-web]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download web build
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: build/web
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build/web
+          publish_branch: gh-pages
+          force_orphan: true
+          commit_message: "Deploy ${{ github.sha }} by ${{ github.actor }}"
+
+      - name: Create deployment notification
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data } = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.ref,
+              auto_merge: false,
+              required_contexts: [],
+              payload: {
+                environment: 'GitHub Pages',
+                deployment_type: 'production'
+              }
+            });
+            
+            github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: data.id,
+              state: 'success',
+              environment: 'GitHub Pages',
+              environment_url: `https://${context.repo.owner}.github.io/${context.repo.repo}`
+            });
+
+  # =============================================================================
+  # JOB 7: Deploy to Firebase (Optional - Production)
+  # =============================================================================
+  deploy-firebase:
+    name: 🚀 Deploy to Firebase
+    runs-on: ubuntu-latest
+    needs: [build-web]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download web build
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: build/web
+
+      - name: Setup Firebase
+        uses: w9jds/firebase-action@master
+        with:
+          args: deploy --only hosting
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+  # =============================================================================
+  # JOB 8: Deploy APK to GitHub Releases
+  # =============================================================================
+  release:
+    name: 📦 Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-android]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: ./apk
+
+      - name: Get version from pubspec.yaml
+        id: version
+        run: |
+          VERSION=$(grep 'version:' pubspec.yaml | head -n 1 | awk '{print $2}' | cut -d'+' -f1)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          body: |
+            ## 🎉 New Release v${{ steps.version.outputs.version }}
+            
+            ### Features
+            - Premium Ultra Portfolio v1
+            - Dark/Light theme toggle
+            - 10+ animation types
+            - Sound effects & haptic feedback
+            - Resume download
+            
+            ### Downloads
+            - 📱 [APK](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/app-release.apk)
+            - 🌐 [Web](https://${{ github.owner }}.github.io/${{ github.repo }})
+            
+            ### Build Info
+            - Commit: ${{ github.sha }}
+            - Author: ${{ github.actor }}
+            - Date: ${{ github.event.head_commit.timestamp }}
+          files: ./apk/app-release.apk
+          draft: false
+          prerelease: false
+
+  # =============================================================================
+  # JOB 9: Performance Check
+  # =============================================================================
+  performance:
+    name: ⚡ Performance Check
+    runs-on: ubuntu-latest
+    needs: [build-web]
+    steps:
+      - name: Download web build
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: build/web
+
+      - name: Measure build performance
+        run: |
+          echo "📊 Performance Metrics"
+          echo "======================"
+          
+          # Total size
+          TOTAL_SIZE=$(du -sh build/web/ | cut -f1)
+          echo "Total Build Size: $TOTAL_SIZE"
+          
+          # Main JS file size
+          JS_SIZE=$(du -sh build/web/main.dart.js | cut -f1)
+          echo "Main JS Size: $JS_SIZE"
+          
+          # Index HTML size
+          HTML_SIZE=$(du -sh build/web/index.html | cut -f1)
+          echo "Index HTML Size: $HTML_SIZE"
+          
+          # File count
+          FILE_COUNT=$(find build/web -type f | wc -l)
+          echo "Total Files: $FILE_COUNT"
+          
+          # Check if within limits
+          if [ "$TOTAL_SIZE" > "5M" ]; then
+            echo "⚠️ Warning: Build size exceeds 5MB"
+          else
+            echo "✅ Build size is within limits"
+          fi
+
+      - name: Upload performance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-report
+          path: build/web/
+          retention-days: 3
+
+  # =============================================================================
+  # JOB 10: Notify (Slack/Discord)
+  # =============================================================================
+  notify:
+    name: 📢 Notify Team
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: always()
+    steps:
+      - name: Get commit info
+        id: commit
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          echo "message=${COMMIT_MSG}" >> $GITHUB_OUTPUT
+          
+      - name: Notify Slack (if webhook available)
+        uses: slack/slack-notification-action@v2
+        if: env.SLACK_WEBHOOK_URL != ''
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          content: |
+            {
+              "text": "🚀 Portfolio Deployed Successfully!",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Deployment Status: ${{{ needs.deploy.result }}}*
+*Repository: ${{ github.repository }}*
+*Commit: ${{ steps.commit.outputs.message }}*
+*URL: https://${{ github.owner }}.github.io/${{ github.repo }}"
+                  }
+                }
+              ]
+            }
