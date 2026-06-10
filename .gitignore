@@ -1,0 +1,33 @@
+# Dart
+.dart_tool/
+.build/
+.packages
+
+# Flutter
+/build/
+/.flutter-plugins
+/.flutter-plugins-dependencies
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.mclock
+*.suo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+.log
+*.log
+pubspec.lock
+
+# Temporary files
+*.tmp
+Temp/
+
+# Build outputs
+build/
+apk/
