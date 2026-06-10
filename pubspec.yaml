@@ -1,8 +1,32 @@
+name: premium_portfolio
+description: Premium Ultra Portfolio v1 for Moe Kyaw Aung
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
 dependencies:
   flutter:
     sdk: flutter
   url_launcher: ^6.2.0
   audioplayers: ^5.2.0
+  
+  # Add these for better performance
+  flutter_animate: ^4.3.0
+  animate_do: ^3.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
 flutter:
+  uses-material-design: true
+  
+  # Add audio assets
   assets:
     - assets/sounds/click.mp3
+    - assets/images/
