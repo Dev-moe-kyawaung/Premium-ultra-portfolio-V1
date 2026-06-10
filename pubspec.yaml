@@ -1,0 +1,5 @@
+dependencies:
+  flutter:
+    sdk: flutter
+  url_launcher: ^6.2.0
+  audioplayers: ^5.2.0
