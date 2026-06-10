@@ -73,8 +73,8 @@ git commit -m "Initial commit with CI/CD pipeline"
 # Name: moekyawaung.github.io
 
 # 9. Add remote and push
-git remote add origin https://github.com/moekyawaung-tech/moekyawaung.github.io.git
+git remote add origin https://github.com/Dev-Moe-kyawaung/Dev-Moe-kyawaung.github.io.git
 git push -u origin main
 
 # 10. Watch pipeline!
-# Go to: https://github.com/moekyawaung-tech/moekyawaung.github.io/actions
+# Go to: https://github.com/Dev-Moe-kyawaung/Dev-Moe-kyawaung.github.io.git/actions
