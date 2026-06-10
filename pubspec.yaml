@@ -3,3 +3,6 @@ dependencies:
     sdk: flutter
   url_launcher: ^6.2.0
   audioplayers: ^5.2.0
+flutter:
+  assets:
+    - assets/sounds/click.mp3
