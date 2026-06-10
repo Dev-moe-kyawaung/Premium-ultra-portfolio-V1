@@ -19,7 +19,7 @@
 ### Automatic Deploy
 - **Trigger**: Push to `main` branch
 - **Destination**: GitHub Pages
-- **URL**: `https://moekyawaung-tech.github.io`
+- **URL**: `https://Dev-Moe-kyawaung.github.io`
 
 ### Manual Deploy
 ```bash
